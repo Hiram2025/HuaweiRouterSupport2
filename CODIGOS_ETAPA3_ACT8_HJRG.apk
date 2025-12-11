@@ -1,0 +1,390 @@
+#Inicializar Firebase en la 2da App.
+
+import SwiftUI
+import Firebase
+@main
+struct HuaweiRouterSupportApp: App {
+    init() {
+        FirebaseApp.configure()
+    }
+
+    var body: some Scene {
+        WindowGroup {
+            ContentView()
+        }
+    }
+}
+
+**********************
+
+
+
+#Configurar Firestore:
+#Crear un archivo Swift llamado FirestoreManager.swift en Xcode.
+#Importar Firebase en Xcode para compilar:
+#Crear la clase para manejar CRUD:
+
+
+import Foundation
+import FirebaseFirestore
+import FirebaseFirestoreSwift
+
+class FirestoreManager: ObservableObject {
+    private let db = Firestore.firestore()
+    @Published var reports: [Report] = []
+
+    func createReport(_ report: Report) {
+        do {
+            _ = try db.collection("reports").addDocument(from: report)
+        } catch let error {
+            print("Error creando reporte: \(error)")
+        }
+    }
+
+    func fetchReports() {
+        db.collection("reports").addSnapshotListener { (querySnapshot, error) in
+            if let error = error {
+                print("Error al recuperar reportes: \(error)")
+                return
+            }
+
+            self.reports = querySnapshot?.documents.compactMap { document in
+                try? document.data(as: Report.self)
+            } ?? []
+        }
+    }
+
+    func updateReport(_ report: Report) {
+        if let id = report.id {
+            do {
+                try db.collection("reports").document(id).setData(from: report)
+            } catch let error {
+                print("Error actualizando reporte: \(error)")
+            }
+        }
+    }
+
+    func deleteReport(_ report: Report) {
+        if let id = report.id {
+            db.collection("reports").document(id).delete { error in
+                if let error = error {
+                    print("Error eliminando reporte: \(error)")
+                }
+            }
+        }
+    }
+}
+
+*********************
+
+
+#Crear un modelo Report.swift para los reportes en Xcode:
+
+import Foundation
+import FirebaseFirestoreSwift
+
+struct Report: Identifiable, Codable {
+    @DocumentID var id: String?
+    var title: String
+    var description: String
+    var status: String
+    var date: Date
+}
+
+******************
+
+#rear interfaces en SwiftUI:
+#ContentView.swift: mostrar lista de reportes, en Xcode:
+
+struct ContentView: View {
+    @StateObject var firestoreManager = FirestoreManager()
+
+    var body: some View {
+        NavigationView {
+            List {
+                ForEach(firestoreManager.reports) { report in
+                    VStack(alignment: .leading) {
+                        Text(report.title)
+                            .font(.headline)
+                        Text(report.description)
+                            .font(.subheadline)
+                        Text("Estado: \(report.status)")
+                            .font(.footnote)
+                    }
+                }
+                .onDelete { indexSet in
+                    indexSet.forEach { index in
+                        let report = firestoreManager.reports[index]
+                        firestoreManager.deleteReport(report)
+                    }
+                }
+            }
+            .navigationTitle("Mis Reportes")
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button(action: addDummyReport) {
+                        Image(systemName: "plus")
+                    }
+                }
+            }
+            .onAppear {
+                firestoreManager.fetchReports()
+            }
+        }
+    }
+
+    func addDummyReport() {
+        let report = Report(title: "Nuevo Diagnóstico",
+                            description: "Prueba de diagnóstico del router",
+                            status: "Pendiente",
+                            date: Date())
+        firestoreManager.createReport(report)
+    }
+}
+
+************
+
+//
+//  AddReportView.swift
+//  HuaweiRouterSupport2
+//
+//  Created by HIRAM DE JESUS RUIZ GAONA on 10/12/25.
+//
+
+import SwiftUI
+
+struct AddReportView: View {
+    @Environment(\.presentationMode) var presentationMode
+    @ObservedObject var firestoreManager: FirestoreManager
+    
+    @State private var title = ""
+    @State private var description = ""
+    
+    var body: some View {
+        NavigationView {
+            Form {
+                Section(header: Text("Título")) {
+                    TextField("Ingrese título", text: $title)
+                }
+                Section(header: Text("Descripción")) {
+                    TextField("Ingrese descripción", text: $description)
+                }
+            }
+            .navigationTitle("Agregar Reporte")
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Cancelar") {
+                        presentationMode.wrappedValue.dismiss()
+                    }
+                }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Guardar") {
+                        let newReport = Report(id: UUID().uuidString, title: title, description: description, status: "Pendiente", timestamp: Date())
+                        firestoreManager.addReport(newReport)
+                        presentationMode.wrappedValue.dismiss()
+                    }
+                    .disabled(title.isEmpty || description.isEmpty)
+                }
+            }
+        }
+    }
+}
+
+
+************
+
+//
+//  ContentView.swift
+//  HuaweiRouterSupport2
+//
+//  Created by HIRAM DE JESUS RUIZ GAONA on 10/12/25.
+//
+
+import SwiftUI
+
+struct ContentView: View {
+    @StateObject var firestoreManager = FirestoreManager()
+    @State private var showAddSheet = false
+    
+    var body: some View {
+        NavigationView {
+            List {
+                ForEach(firestoreManager.reports) { report in
+                    VStack(alignment: .leading) {
+                        Text(report.title).font(.headline)
+                        Text(report.description).font(.subheadline)
+                        Text("Estado: \(report.status)").font(.footnote)
+                    }
+                    .contextMenu {
+                        Button("Actualizar") {
+                            updateReport(report)
+                        }
+                        Button("Eliminar") {
+                            firestoreManager.deleteReport(report)
+                        }
+                    }
+                }
+                .onDelete(perform: deleteReport)
+            }
+            .navigationTitle("Mis Reportes")
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button(action: { showAddSheet.toggle() }) {
+                        Image(systemName: "plus")
+                    }
+                }
+            }
+            .sheet(isPresented: $showAddSheet) {
+                AddReportView(firestoreManager: firestoreManager)
+            }
+        }
+    }
+    
+    func deleteReport(at offsets: IndexSet) {
+        offsets.forEach { index in
+            let report = firestoreManager.reports[index]
+            firestoreManager.deleteReport(report)
+        }
+    }
+    
+    func updateReport(_ report: Report) {
+        var updatedReport = report
+        updatedReport.status = report.status == "Pendiente" ? "En revisión" : "Resuelto"
+        firestoreManager.updateReport(updatedReport)
+    }
+}
+
+
+**************
+
+//
+//  FirestoreManager.swift
+//  HuaweiRouterSupport2
+//
+//  Created by HIRAM DE JESUS RUIZ GAONA on 10/12/25.
+//
+
+import Foundation
+import Firebase
+import FirebaseFirestore
+import Combine
+
+
+class FirestoreManager: ObservableObject {
+    @Published var reports: [Report] = []
+    private var db = Firestore.firestore()
+    
+    init() {
+        fetchReports()
+    }
+    
+    func fetchReports() {
+        db.collection("reports").addSnapshotListener { snapshot, error in
+            guard let documents = snapshot?.documents else {
+                print("No documents: \(error?.localizedDescription ?? "")")
+                return
+            }
+            
+            self.reports = documents.compactMap { doc -> Report? in
+                let data = doc.data()
+                guard let title = data["title"] as? String,
+                      let description = data["description"] as? String,
+                      let status = data["status"] as? String,
+                      let timestamp = data["timestamp"] as? Timestamp else { return nil }
+                
+                return Report(id: doc.documentID, title: title, description: description, status: status, timestamp: timestamp.dateValue())
+            }
+        }
+    }
+    
+    func addReport(_ report: Report) {
+        let data: [String: Any] = [
+            "title": report.title,
+            "description": report.description,
+            "status": report.status,
+            "timestamp": report.timestamp
+        ]
+        db.collection("reports").addDocument(data: data)
+    }
+    
+    func updateReport(_ report: Report) {
+        db.collection("reports").document(report.id).updateData([
+            "title": report.title,
+            "description": report.description,
+            "status": report.status,
+            "timestamp": report.timestamp
+        ])
+    }
+    
+    func deleteReport(_ report: Report) {
+        db.collection("reports").document(report.id).delete()
+    }
+}
+
+
+**************
+
+//
+//  HuaweiRouterSupport2App.swift
+//  HuaweiRouterSupport2
+//
+//  Created by HIRAM DE JESUS RUIZ GAONA on 10/12/25.
+//
+
+import SwiftUI
+import Firebase
+
+@main
+struct HuaweiRouterSupportApp: App {
+    
+    // 1️⃣ Inicialización de Firebase
+    init() {
+        FirebaseApp.configure()
+    }
+    
+    var body: some Scene {
+        WindowGroup {
+            ContentView()
+        }
+    }
+}
+
+*************
+
+
+import SwiftUI
+
+struct AddReportView: View {
+    @Environment(\.dismiss) var dismiss
+    @ObservedObject var firestoreManager: FirestoreManager
+    
+    @State private var title = ""
+    @State private var description = ""
+    
+    var body: some View {
+        NavigationView {
+            Form {
+                TextField("Título", text: $title)
+                TextField("Descripción", text: $description)
+                
+                Button("Agregar Reporte") {
+                    let report = Report(title: title,
+                                        description: description,
+                                        status: "Pendiente",
+                                        date: Date())
+                    firestoreManager.createReport(report)
+                    dismiss()
+                }
+            }
+            .navigationTitle("Nuevo Reporte")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancelar") { dismiss() }
+                }
+            }
+        }
+    }
+}
+***********
+
+
