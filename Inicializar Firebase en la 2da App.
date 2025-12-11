@@ -1,0 +1,16 @@
+#Inicializar Firebase en la 2da App.
+
+import SwiftUI
+import Firebase
+@main
+struct HuaweiRouterSupportApp: App {
+    init() {
+        FirebaseApp.configure()
+    }
+
+    var body: some Scene {
+        WindowGroup {
+            ContentView()
+        }
+    }
+}
